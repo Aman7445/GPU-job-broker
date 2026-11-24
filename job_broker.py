@@ -5,7 +5,6 @@ import os
 import sqlite3
 from contextlib import asynccontextmanager
 from decimal import Decimal, InvalidOperation
-from math import ceil
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -19,13 +18,14 @@ from pydantic import BaseModel, Field
 
 if __package__:
     from .broker_core import Broker, Clock, RequestError, service_lock
+    from .broker_core.submission import validate_job
 else:
     from broker_core import Broker, Clock, RequestError, service_lock
+    from broker_core.submission import validate_job
 
 
 DB_PATH = Path(__file__).with_name("submissions.sqlite")
 MAX_BODY_BYTES = 16_384
-MAX_ESTIMATE_MINUTES = 5_256_000
 
 
 SQLITE_MAX_ID = 2**63 - 1
@@ -40,33 +40,6 @@ class Completion(BaseModel):
 
 class AdvanceTime(BaseModel):
     seconds: Annotated[int, Field(strict=True, ge=1, le=86400)]
-
-
-def validate_job(body, client_key):
-    if not isinstance(body, dict):
-        raise ValueError("Expected a JSON object")
-
-    team = body.get("team")
-    gpus = body.get("gpus")
-    priority = body.get("priority", "normal")
-
-    if not isinstance(team, str) or not 1 <= len(team.strip()) <= 100:
-        raise ValueError("team must contain 1 to 100 characters")
-    if not isinstance(client_key, str) or not 1 <= len(client_key.strip()) <= 200:
-        raise ValueError("Idempotency-Key must contain 1 to 200 characters")
-    if type(gpus) is not int or gpus not in (1, 2, 4, 8):
-        raise ValueError("gpus must be 1, 2, 4, or 8")
-    if priority not in ("low", "normal", "high"):
-        raise ValueError("priority must be low, normal, or high")
-
-    try:
-        minutes = Decimal(str(body.get("estimated_minutes")))
-    except InvalidOperation:
-        raise ValueError("estimated_minutes must be a number") from None
-    if not minutes.is_finite() or not 0 < minutes <= MAX_ESTIMATE_MINUTES:
-        raise ValueError("estimated_minutes must be positive and at most 5,256,000")
-
-    return team.strip(), client_key.strip(), gpus, max(1, ceil(minutes * 60)), priority
 
 
 async def read_json(request):

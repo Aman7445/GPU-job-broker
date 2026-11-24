@@ -34,3 +34,7 @@ def protected_placement(queued, nodes, now, node_limit):
         held = min(nodes, key=lambda node: (node["status"] != "ready", node["id"]))
         return job["id"], held["id"]
     return job["id"], None
+
+
+def fifo_key(job):
+    return -PRIORITIES[job["priority"]], job["id"]

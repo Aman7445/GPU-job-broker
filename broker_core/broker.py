@@ -18,10 +18,13 @@ class RequestError(ValueError):
 
 
 class Broker:
-    def __init__(self, path, start=None, seed=42, idle_seconds=300, provider=None):
+    def __init__(self, path, start=None, seed=42, idle_seconds=300, provider=None, *, policy="fair"):
         self.path = Path(path)
         self.idle_seconds = idle_seconds
         self.provider = provider if provider is not None else FakeProvider()
+        if policy not in ("fair", "fifo"):
+            raise ValueError("Scheduling policy must be fair or fifo")
+        self.policy = policy
         if idle_seconds < 0:
             raise ValueError("Idle seconds must be nonnegative")
         store.initialize(self.path, int(time()) if start is None else start, seed)
@@ -31,31 +34,40 @@ class Broker:
         return conn.execute("SELECT * FROM broker_state WHERE id=1").fetchone()
 
     def submit(self, request):
-        team, key, gpus, estimate, priority = request
+        return self.submit_batch([(request, None, "succeeded")])[0]
+
+    def submit_batch(self, requests):
+        """Queue simultaneous arrivals before making placement decisions."""
         with store.transaction(self.path, write=True) as db:
             now = self._state(db)["sim_time"]
-            saved = db.execute(
-                "SELECT * FROM jobs WHERE team=? AND client_key=?", (team, key)
-            ).fetchone()
-            if saved is not None:
-                if (saved["gpus"], saved["estimated_seconds"], saved["priority"]) != (
-                    gpus, estimate, priority
-                ):
-                    raise RequestError("Idempotency key already has a different submission", 409)
-                return dict(saved), False
+            accepted = []
+            for request, actual_seconds, outcome in requests:
+                team, key, gpus, estimate, priority = request
+                saved = db.execute(
+                    "SELECT * FROM jobs WHERE team=? AND client_key=?", (team, key)
+                ).fetchone()
+                if saved is not None:
+                    if (saved["gpus"], saved["estimated_seconds"], saved["priority"]) != (
+                        gpus, estimate, priority
+                    ):
+                        raise RequestError("Idempotency key already has a different submission", 409)
+                    accepted.append((saved["id"], False))
+                    continue
 
-            job_id = db.execute(
-                """INSERT INTO jobs
-                   (team,client_key,gpus,estimated_seconds,priority,status,submitted_at)
-                   VALUES (?,?,?,?,?,'queued',?)""",
-                (team, key, gpus, estimate, priority, now),
-            ).lastrowid
-            db.execute(
-                "INSERT INTO sim_events(job_id,outcome,runtime_seconds) VALUES (?,'succeeded',?)",
-                (job_id, estimate),
-            )
-            self._settle(db, now)
-            return self._get_job(db, job_id), True
+                job_id = db.execute(
+                    """INSERT INTO jobs
+                       (team,client_key,gpus,estimated_seconds,priority,status,submitted_at)
+                       VALUES (?,?,?,?,?,'queued',?)""",
+                    (team, key, gpus, estimate, priority, now),
+                ).lastrowid
+                db.execute(
+                    "INSERT INTO sim_events(job_id,outcome,runtime_seconds) VALUES (?,?,?)",
+                    (job_id, outcome, estimate if actual_seconds is None else actual_seconds),
+                )
+                accepted.append((job_id, True))
+            if any(created for _, created in accepted):
+                self._settle(db, now)
+            return [(self._get_job(db, job_id), created) for job_id, created in accepted]
 
     @staticmethod
     def _get_job(conn, job_id):
@@ -162,12 +174,18 @@ class Broker:
             queued = conn.execute("SELECT * FROM jobs WHERE status='queued'").fetchall()
             if not queued:
                 return
-            protected, held_node = fairness.protected_placement(queued, nodes, now, NODE_LIMIT)
-            team_gpus = dict(conn.execute(
-                """SELECT team, SUM(gpus) FROM jobs
-                   WHERE node_id IS NOT NULL AND status IN ('queued','running') GROUP BY team"""
-            ))
-            for job in sorted(queued, key=lambda row: fairness.rank_key(row, now, team_gpus, protected)):
+            if self.policy == "fair":
+                protected, held_node = fairness.protected_placement(queued, nodes, now, NODE_LIMIT)
+                team_gpus = dict(conn.execute(
+                    """SELECT team, SUM(gpus) FROM jobs
+                       WHERE node_id IS NOT NULL AND status IN ('queued','running') GROUP BY team"""
+                ))
+                ordered = sorted(queued, key=lambda row: fairness.rank_key(row, now, team_gpus, protected))
+            else:
+                protected, held_node = None, None
+                ordered = sorted(queued, key=fairness.fifo_key)
+
+            for job in ordered:
                 candidates = [
                     node for node in nodes if node["gpus"] - node["used"] >= job["gpus"]
                     and (node["id"] != held_node or job["id"] == protected)
@@ -231,12 +249,13 @@ class Broker:
             ).fetchone()[0],
             self._state(db)["launch_retry_at"],
         ]
-        for age in (fairness.PROMOTION_SECONDS, fairness.PROTECTION_SECONDS):
-            deadlines.append(db.execute(
-                """SELECT MIN(submitted_at) + ? FROM jobs
-                   WHERE status='queued' AND node_id IS NULL AND submitted_at + ? > ?""",
-                (age, age, now),
-            ).fetchone()[0])
+        if self.policy == "fair":
+            for age in (fairness.PROMOTION_SECONDS, fairness.PROTECTION_SECONDS):
+                deadlines.append(db.execute(
+                    """SELECT MIN(submitted_at) + ? FROM jobs
+                       WHERE status='queued' AND node_id IS NULL AND submitted_at + ? > ?""",
+                    (age, age, now),
+                ).fetchone()[0])
         return min((deadline for deadline in deadlines if deadline is not None and deadline > now), default=None)
 
     def advance(self, *, seconds):
@@ -252,6 +271,10 @@ class Broker:
                 db.execute("UPDATE broker_state SET sim_time=? WHERE id=1", (now,))
                 self._settle(db, now)
             return now
+
+    def next_deadline(self):
+        with store.transaction(self.path) as db:
+            return self._next_due(db, self._state(db)["sim_time"])
 
     def cost_report(self, start, end):
         try:
