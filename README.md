@@ -229,25 +229,4 @@ podman compose stop broker &&
 
 Check `/readyz`, a known job, and a known cost window after recovery. To roll back to an earlier image with a compatible SQLite schema, set `BROKER_IMAGE` to its digest and repeat the deploy steps. Preserve the named volume during routine cleanup.
 
-## Replay the Northwind trace
-
-Replay uses temporary databases and runs both the fair and priority FIFO policies against the bundled CSV with the same provider seed and idle timeout. The JSON output contains per-team wait percentiles, costs, and the input audit. See the [policy comparison](policy_comparison.md) for the results and how to read them.
-
-**Local Python with the virtual environment active**
-
-```sh
-python replay.py --seed 42 --idle-seconds 300
-python -m unittest discover -s tests -v
-```
-
-**Docker**
-
-```sh
-docker run --rm "$BROKER_IMAGE" python replay.py --seed 42 --idle-seconds 300
-```
-
-**Podman**
-
-```sh
-podman run --rm "$BROKER_IMAGE" python replay.py --seed 42 --idle-seconds 300
 ```
