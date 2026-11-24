@@ -229,4 +229,3 @@ podman compose stop broker &&
 
 Check `/readyz`, a known job, and a known cost window after recovery. To roll back to an earlier image with a compatible SQLite schema, set `BROKER_IMAGE` to its digest and repeat the deploy steps. Preserve the named volume during routine cleanup.
 
-```
