@@ -191,6 +191,15 @@ def create_app(db_path, *, idle_seconds=300, clock_speed=60):
             """Advance the simulated clock and process provider, job, and reaper events."""
             return {"sim_time": broker.advance(seconds=advance.seconds)}
 
+    @app.get("/costs")
+    def cost_report(
+        broker: BrokerDependency,
+        start: Annotated[str, Query(alias="from", description="ISO 8601 time or Unix seconds")],
+        end: Annotated[str, Query(alias="to", description="ISO 8601 time or Unix seconds")],
+    ):
+        """Report GPU-hours and US dollar charges per team for a start-inclusive, end-exclusive window."""
+        return broker.cost_report(start, end)
+
     return app
 
 

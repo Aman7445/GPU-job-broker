@@ -4,11 +4,10 @@ import logging
 from pathlib import Path
 from time import time
 
-from . import store
+from . import costs, fairness, store
 from .provider import CapacityUnavailable, FakeProvider, NODE_LIMIT, TYPES
 
 LOG = logging.getLogger(__name__)
-PRIORITIES = {"low": 0, "normal": 1, "high": 2}
 TERMINAL = ("succeeded", "failed", "cancelled")
 
 
@@ -163,10 +162,15 @@ class Broker:
             queued = conn.execute("SELECT * FROM jobs WHERE status='queued'").fetchall()
             if not queued:
                 return
-            # High priority first. Within a priority, serve earlier submissions first.
-            for job in sorted(queued, key=lambda row: (-PRIORITIES[row["priority"]], row["id"])):
+            protected, held_node = fairness.protected_placement(queued, nodes, now, NODE_LIMIT)
+            team_gpus = dict(conn.execute(
+                """SELECT team, SUM(gpus) FROM jobs
+                   WHERE node_id IS NOT NULL AND status IN ('queued','running') GROUP BY team"""
+            ))
+            for job in sorted(queued, key=lambda row: fairness.rank_key(row, now, team_gpus, protected)):
                 candidates = [
                     node for node in nodes if node["gpus"] - node["used"] >= job["gpus"]
+                    and (node["id"] != held_node or job["id"] == protected)
                     and (job["node_id"] is None or node["status"] == "ready")
                 ]
                 if candidates:
@@ -220,13 +224,19 @@ class Broker:
                 return
 
     def _next_due(self, db, now):
-        deadlines = (
+        deadlines = [
             db.execute("SELECT MIN(due_at) FROM sim_events").fetchone()[0],
             db.execute(
                 "SELECT MIN(idle_since)+?+1 FROM nodes WHERE status='ready'", (self.idle_seconds,)
             ).fetchone()[0],
             self._state(db)["launch_retry_at"],
-        )
+        ]
+        for age in (fairness.PROMOTION_SECONDS, fairness.PROTECTION_SECONDS):
+            deadlines.append(db.execute(
+                """SELECT MIN(submitted_at) + ? FROM jobs
+                   WHERE status='queued' AND node_id IS NULL AND submitted_at + ? > ?""",
+                (age, age, now),
+            ).fetchone()[0])
         return min((deadline for deadline in deadlines if deadline is not None and deadline > now), default=None)
 
     def advance(self, *, seconds):
@@ -242,3 +252,13 @@ class Broker:
                 db.execute("UPDATE broker_state SET sim_time=? WHERE id=1", (now,))
                 self._settle(db, now)
             return now
+
+    def cost_report(self, start, end):
+        try:
+            start, end = costs.parse_timestamp(start), costs.parse_timestamp(end)
+        except ValueError as exc:
+            raise RequestError(str(exc)) from None
+        if end <= start:
+            raise RequestError("to must be later than from")
+        with store.transaction(self.path) as db:
+            return costs.report(db, start, end, self._state(db)["sim_time"])
