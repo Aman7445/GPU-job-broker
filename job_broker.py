@@ -101,7 +101,7 @@ def page(items, limit):
 
 
 def create_app(db_path, *, idle_seconds=300, clock_speed=60):
-    db_path = Path(db_path)
+    db_path = Path(db_path).expanduser().resolve()
     if idle_seconds < 0 or not 0 <= clock_speed <= 3600:
         raise ValueError("Idle seconds must be nonnegative and clock speed must be between 0 and 3600")
 
@@ -195,7 +195,7 @@ def create_app(db_path, *, idle_seconds=300, clock_speed=60):
 
 
 app = create_app(
-    DB_PATH,
+    os.environ.get("BROKER_DB", DB_PATH),
     idle_seconds=int(os.environ.get("BROKER_IDLE_SECONDS", "300")),
     clock_speed=int(os.environ.get("BROKER_CLOCK_SPEED", "60")),
 )

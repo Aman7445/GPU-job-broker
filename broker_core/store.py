@@ -61,6 +61,7 @@ def connect(path):
     conn = sqlite3.connect(path, timeout=5, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA synchronous = FULL")
     return conn
 
 
