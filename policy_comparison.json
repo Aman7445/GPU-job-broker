@@ -1,0 +1,230 @@
+{
+  "seed": 42,
+  "idle_seconds": 300,
+  "input": {
+    "rows": 494,
+    "accepted": 479,
+    "duplicate_lines": [
+      42,
+      117,
+      147,
+      160,
+      189,
+      194,
+      226,
+      228,
+      286,
+      290,
+      360,
+      453,
+      464
+    ],
+    "rejected": [
+      {
+        "line": 88,
+        "reason": "gpus must be 1, 2, 4, or 8"
+      },
+      {
+        "line": 393,
+        "reason": "gpus must be 1, 2, 4, or 8"
+      }
+    ]
+  },
+  "policies": {
+    "fair": {
+      "description" : "Considers effective priority first. When priorities tie, it favors the team using fewer running or reserved GPUs, then the earliest submission. Waiting jobs gain a priority level every 30 minutes. After an hour, the oldest job without a reservation can have capacity held for it.",  
+      "from": 1740967020,
+      "to": 1741547042,
+      "as_of": 1741547041,
+      "total_usd": 3038.768611,
+      "teams": [
+        {
+          "team": "forecast",
+          "gpu_hours": 167.58333333,
+          "cost_usd": 338.884647
+        },
+        {
+          "team": "nlp",
+          "gpu_hours": 365.65,
+          "cost_usd": 560.141468
+        },
+        {
+          "team": "platform",
+          "gpu_hours": 192.85,
+          "cost_usd": 406.017664
+        },
+        {
+          "team": "speech",
+          "gpu_hours": 985.6,
+          "cost_usd": 1125.058375
+        },
+        {
+          "team": "vision",
+          "gpu_hours": 381.41666667,
+          "cost_usd": 608.666457
+        }
+      ],
+      "wait_by_team": {
+        "forecast": {
+          "started": 64,
+          "never_started": 0,
+          "wait_seconds": {
+            "p50": 0,
+            "p95": 393,
+            "p99": 468
+          }
+        },
+        "nlp": {
+          "started": 80,
+          "never_started": 0,
+          "wait_seconds": {
+            "p50": 57,
+            "p95": 467,
+            "p99": 1164
+          }
+        },
+        "platform": {
+          "started": 24,
+          "never_started": 0,
+          "wait_seconds": {
+            "p50": 0,
+            "p95": 5233,
+            "p99": 5820
+          }
+        },
+        "speech": {
+          "started": 56,
+          "never_started": 0,
+          "wait_seconds": {
+            "p50": 328,
+            "p95": 767,
+            "p99": 4386
+          }
+        },
+        "vision": {
+          "started": 255,
+          "never_started": 0,
+          "wait_seconds": {
+            "p50": 2106,
+            "p95": 7347,
+            "p99": 7684
+          }
+        }
+      },
+      "jobs": {
+        "cancelled": 17,
+        "failed": 30,
+        "succeeded": 432
+      },
+      "nodes": {
+        "failed": 2,
+        "terminated": 127
+      },
+      "capacity_errors": 25
+    },
+    "fifo": {
+      "description" : "Considers high before normal before low. Within the same priority, the earliest submission goes first. FIFO means first in, first out.", 
+      "from": 1740967020,
+      "to": 1741547042,
+      "as_of": 1741547041,
+      "total_usd": 3039.742639,
+      "teams": [
+        {
+          "team": "forecast",
+          "gpu_hours": 167.58333333,
+          "cost_usd": 338.951389
+        },
+        {
+          "team": "nlp",
+          "gpu_hours": 365.65,
+          "cost_usd": 560.320146
+        },
+        {
+          "team": "platform",
+          "gpu_hours": 192.85,
+          "cost_usd": 406.447353
+        },
+        {
+          "team": "speech",
+          "gpu_hours": 985.6,
+          "cost_usd": 1124.852916
+        },
+        {
+          "team": "vision",
+          "gpu_hours": 381.41666667,
+          "cost_usd": 609.170835
+        }
+      ],
+      "wait_by_team": {
+        "forecast": {
+          "started": 64,
+          "never_started": 0,
+          "wait_seconds": {
+            "p50": 0,
+            "p95": 393,
+            "p99": 468
+          }
+        },
+        "nlp": {
+          "started": 80,
+          "never_started": 0,
+          "wait_seconds": {
+            "p50": 57,
+            "p95": 467,
+            "p99": 1164
+          }
+        },
+        "platform": {
+          "started": 24,
+          "never_started": 0,
+          "wait_seconds": {
+            "p50": 0,
+            "p95": 5233,
+            "p99": 5951
+          }
+        },
+        "speech": {
+          "started": 56,
+          "never_started": 0,
+          "wait_seconds": {
+            "p50": 328,
+            "p95": 767,
+            "p99": 4386
+          }
+        },
+        "vision": {
+          "started": 255,
+          "never_started": 0,
+          "wait_seconds": {
+            "p50": 2106,
+            "p95": 7347,
+            "p99": 7684
+          }
+        }
+      },
+      "jobs": {
+        "cancelled": 17,
+        "failed": 30,
+        "succeeded": 432
+      },
+      "nodes": {
+        "failed": 2,
+        "terminated": 127
+      },
+      "capacity_errors": 25
+    }
+  },
+  "comparison": {
+    "shared_placement": "Both policies prefer a ready node and choose the tightest GPU fit. They can reserve GPUs on a booting node or launch the smallest suitable node when needed.",
+    "example": {
+      "setup": "Vision already uses 8 GPUs and Speech uses zero. Both have a newly queued normal-priority job that fits the available slot, and Vision submitted first.",
+      "fair_first": "Speech, because its team is using fewer GPUs.",
+      "fifo_first": "Vision, because its job arrived first."
+    },
+    "observed_replay": {
+      "fair_cost_savings_usd": 0.974028,
+      "fair_cost_savings_percent": 0.03204,
+      "wait_summary": "Every team had the same p50 and p95 wait. Platform's p99 was 131 seconds shorter with Fair. The other teams' p99 values matched."
+    }
+  }
+}
